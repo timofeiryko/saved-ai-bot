@@ -1,0 +1,14 @@
+[project]
+name = "saved-ai-bot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.16.0",
+    "backoff>=2.2.1",
+    "openai>=1.58.1",
+    "pinecone>=5.4.2",
+    "python-dotenv>=1.0.1",
+    "tortoise-orm>=0.23.0",
+]
