@@ -2,10 +2,14 @@ import os
 import asyncio
 import logging
 
+import sys
+# Add the parent directory to the sys.path to allow importing from backend and models
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from tortoise import Tortoise
 from tortoise.exceptions import ConfigurationError
-from models import TelegramUser, Note, UserMessage
-from backend import create_store_for_user, client, OPENAI_KEY
+from models import TelegramUser, Note
+from backend import upload_notes_to_pinecone
 
 import dotenv
 dotenv.load_dotenv()
@@ -13,6 +17,8 @@ dotenv.load_dotenv()
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+TEST_USER_ID = os.getenv('TEST_USER_ID')
 
 async def init_db():
     """Initialize Tortoise ORM."""
@@ -26,7 +32,7 @@ async def init_db():
 async def create_example_user():
     """Create an example TelegramUser."""
     user = await TelegramUser.create(
-        telegram_id=1001,  # Example Telegram user ID
+        telegram_id=TEST_USER_ID,  # Example Telegram user ID
         username='testuser',
         first_name='Test',
         last_name='User'
@@ -71,58 +77,12 @@ async def run_tests():
         # Create 10 Notes for the User with larger Russian content
         await create_notes_for_user(user, num_notes=10)
 
-        # Test create_store_for_user
-        logger.info("\nTesting create_store_for_user function...")
-        await create_store_for_user(user.telegram_id)
-        logger.info("create_store_for_user function executed successfully.")
-
-        # Create a thread with a Russian message
-        thread = await client.beta.threads.create(
-            messages=[
-                {
-                    'role': 'user',
-                    'content': 'Написание кода'
-                }
-            ]
-        )
-
-        # List available assistants and find the correct one
-        available_assistants = await client.beta.assistants.list()
-        assistant_id = f'knowledge_base_assistant_{user.telegram_id}'
-        assistant = next((a for a in available_assistants.data if a.name == assistant_id), None)
-
-        if not assistant:
-            logger.error(f"Assistant with ID '{assistant_id}' not found.")
-            return
-
-        # Create and poll for the run
-        run = await client.beta.threads.runs.create_and_poll(
-            thread_id=thread.id, assistant_id=assistant.id
-        )
-
-        # Fetch messages using async iteration
-        messages_paginator = client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id)
-        messages = []
-        async for message in messages_paginator:
-            messages.append(message)
-
-        if not messages:
-            logger.warning("No messages retrieved.")
-            return
-
-        message_content = messages[0].content[0].text
-        annotations = message_content.annotations
-        citations = []
-        for index, annotation in enumerate(annotations):
-            message_content.value = message_content.value.replace(annotation.text, f"[{index}]")
-            file_citation = getattr(annotation, "file_citation", None)
-            if file_citation:
-                cited_file = await client.files.retrieve(file_citation.file_id)
-                citations.append(f"[{index}] {cited_file.filename}")
-
-        print(message_content.value)
-        print("\n".join(citations))
-
+        # Test upload_notes_to_pinecone
+        logger.info("\nTesting upload_notes_to_pinecone function...")
+        await upload_notes_to_pinecone(user)
+        logger.info("upload_notes_to_pinecone function executed successfully.")
+        
+        
     except ConfigurationError as ce:
         logger.error(f"Configuration Error: {ce}")
     except Exception as e:

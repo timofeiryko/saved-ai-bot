@@ -18,7 +18,13 @@ class TelegramUser(BaseModel):
     first_name = fields.CharField(max_length=255, null=True)
     last_name = fields.CharField(max_length=255, null=True)
 
+    index_name = fields.CharField(max_length=255, null=True)
     vector_storage_volume = fields.FloatField(default=0)
+    queries_count = fields.IntField(default=0)
+
+    @property
+    def vector_storage_namespace(self):
+        return f'user_{self.telegram_id}_notes'
 
     @property
     async def last_24_hours_messages_count(self):
@@ -48,6 +54,7 @@ class Note(BaseModel):
     text = fields.TextField()
     user = fields.ForeignKeyField('models.TelegramUser', related_name='notes')
     telegram_message_id = fields.IntField()
+    is_vectorized = fields.BooleanField(default=False)
 
     def __str__(self):
         return self.text[:20]
