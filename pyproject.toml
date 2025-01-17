@@ -26,6 +26,7 @@ dependencies = [
     "seaborn>=0.13.2",
     "polars>=1.19.0",
     "orjson>=3.10.12",
+    "scikit-learn>=1.6.0",
 ]
 
 [dependency-groups]
