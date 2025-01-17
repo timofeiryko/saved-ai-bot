@@ -442,6 +442,8 @@ async def process_json_file(message: types.Message, state: FSMContext):
         reply_markup=types.ReplyKeyboardRemove()
     )
 
+    os.remove(wordcloud_path)
+
 @dp.message(States.notes)
 async def add_note(message: types.Message):
 
