@@ -63,9 +63,9 @@ class States(StatesGroup):
 # PRICE_6_MONTHS = 545
 # PRICE_12_MONTHS = 480
 
-PRICE_1_MONTH = 100
-PRICE_3_MONTHS = 300
-PRICE_6_MONTHS = 600
+PRICE_1_MONTH = 640
+PRICE_3_MONTHS = 580
+PRICE_6_MONTHS = 540
 PRICE_12_MONTHS = 480
 
 FREE_USERS = ['ryko_official', 'netnet_dada', 'AristotelPetrov', 'donRumata03', 'Minlos', 'youryouthhh']
@@ -275,21 +275,21 @@ async def process_subscription_choice(message: types.Message, state: FSMContext)
 
     price = None
     if message.text == valid_choices[0]:
-        price = PRICE_1_MONTH
         title = 'Подписка на 1 месяц'
         months_num = 1
+        price = PRICE_1_MONTH * months_num
     elif message.text == valid_choices[1]:
-        price = PRICE_3_MONTHS
         title = 'Подписка на 3 месяца'
         months_num = 3
+        price = PRICE_3_MONTHS * months_num
     elif message.text == valid_choices[2]:
-        price = PRICE_6_MONTHS
         title = 'Подписка на 6 месяцев'
         months_num = 6
+        price = PRICE_6_MONTHS * months_num
     elif message.text == valid_choices[3]:
-        price = PRICE_12_MONTHS
         title = 'Подписка на 12 месяцев'
         months_num = 12
+        price = PRICE_12_MONTHS * months_num
     else:
         await message.answer('Что-то пошло не так, попробуй еще раз: /subscribe')
         return
