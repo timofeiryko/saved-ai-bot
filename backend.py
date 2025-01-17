@@ -7,11 +7,14 @@ import logging
 import random
 from typing import Optional
 from dataclasses import dataclass
+import polars as pl
 
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone.vectorstores import Pinecone
-from langchain_community.document_loaders import TextLoader, PDFMinerLoader, CSVLoader
+from langchain_community.document_loaders import TextLoader, PDFMinerLoader, CSVLoader, PolarsDataFrameLoader
+from langchain.docstore.document import Document
 from langchain_text_splitters import CharacterTextSplitter
+from polars import DataFrame
 
 from langchain.agents.openai_assistant import OpenAIAssistantRunnable
 from langchain_openai import ChatOpenAI
@@ -178,12 +181,23 @@ async def generate_csv_from_notes(user: TelegramUser) -> str:
 
     return filename
 
+async def get_docs_from_not_uploaded_notes(user: TelegramUser) -> list[Document]:
+
+    notes = await user.notes.filter(is_vectorized=False).all()
+    notes_data = [{"message_id": note.telegram_message_id, "text": note.text} for note in notes]
+
+    docs = []
+    for note in notes_data:
+        docs.append(Document(
+            page_content=note['text'],
+            metadata={"source": note['message_id']}
+        ))
+
+    return docs
+
 async def upload_notes_to_pinecone(user: TelegramUser):
 
-    # Create a txt file with all the not vectorized notes
-    filename = await generate_csv_from_notes(user)
-    loader = CSVLoader(filename, source_column='message_id', content_columns=['text'])
-    documents = loader.load()
+    documents = await get_docs_from_not_uploaded_notes(user)
 
     text_splitter = CharacterTextSplitter(chunk_size=1024, chunk_overlap=256)
     docs = text_splitter.split_documents(documents)
@@ -216,8 +230,8 @@ async def search_notes(user: TelegramUser, query: str):
     )
 
     search_results = await vector_store.asimilarity_search_with_relevance_scores(query=query, k=5)
-    # Filter out notes with relevance score less than 0.5. List of Tuples of (doc, similarity_score)
     search_results = [(doc, score) for doc, score in search_results if score > 0.6]
+    
     # Sort by relevance score, return only docs
     search_results = [doc for doc, score in sorted(search_results, key=lambda x: x[1], reverse=True)]
 
@@ -234,3 +248,33 @@ async def search_notes(user: TelegramUser, query: str):
     await user.save()
 
     return unique_search_results
+
+async def upload_exported_chat_to_pinecone(user: TelegramUser, df: DataFrame, chat_name: str):
+
+    # Create column "text", which is msg_content + \n\n + chat_name
+    df = df.with_columns(
+        (pl.col('msg_content') + '\n\n' + chat_name).alias('text')
+    )
+    df = df.select(['text', 'date'])
+
+    loader = PolarsDataFrameLoader(df, page_content_column='text')
+    documents = loader.load()
+
+    text_splitter = CharacterTextSplitter(chunk_size=1024, chunk_overlap=256)
+    docs = text_splitter.split_documents(documents)
+
+    if user.index_name:
+        index_name = user.index_name
+    else:
+        index_name = random.choice(INDEX_NAMES)
+        user.index_name = index_name
+        await user.save()
+
+    vector_store = await Pinecone.afrom_documents(
+        docs,
+        index_name=index_name,
+        embedding=EMBEDDINGS,
+        namespace=user.vector_storage_namespace
+    )
+
+    return

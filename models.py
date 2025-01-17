@@ -39,11 +39,19 @@ class TelegramUser(BaseModel):
     subscription_end_date = fields.DatetimeField(null=True)
 
     async def activate_subscription(self, days=30):
-        self.subscription_end_date = datetime.datetime.now() + datetime.timedelta(days=days)
+
+        current_end_date = self.subscription_end_date if self.subscription_end_date else datetime.datetime.now()
+        current_end_date += datetime.timedelta(days=days)
+        self.subscription_end_date = current_end_date
+
         await self.save()
 
     async def has_active_subscription(self):
-        return self.subscription_end_date and self.subscription_end_date > datetime.datetime.now()
+
+        if not self.subscription_end_date:
+            return False
+
+        return self.subscription_end_date >= datetime.datetime.now()
 
     def __str__(self):
         return self.username

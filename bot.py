@@ -1,6 +1,8 @@
-from aiogram import Bot, Dispatcher
+import aiogram
+from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+import aiogram.exceptions
 from aiogram.filters import CommandStart, Command
 from aiogram import types
 from aiogram.fsm.state import State, StatesGroup
@@ -12,11 +14,14 @@ from apscheduler.jobstores.redis import RedisJobStore
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.base import StorageKey
 from apscheduler_di import ContextSchedulerDecorator
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 from models import TelegramUser, Note, UserMessage
 from tortoise import Tortoise
 from generate_schema import init
-from backend import upload_notes_to_pinecone, search_notes, start_kb_chat, continue_kb_chat
+from backend import upload_notes_to_pinecone, search_notes, start_kb_chat, continue_kb_chat, upload_exported_chat_to_pinecone
+from parse_telegram_json_polars import parse_telegram_chat
+from text_tools import generate_wordcloud
 
 import asyncio
 import logging
@@ -25,7 +30,7 @@ import sys
 import datetime
 
 import dotenv
-dotenv.load_dotenv()
+dotenv.load_dotenv(override=True)
 
 # Bot token can be obtained via https://t.me/BotFather
 TOKEN = os.getenv('TG_BOT_TOKEN')
@@ -33,22 +38,69 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 storage = MemoryStorage()
 
 UPDATE_INTERVAL = int(os.getenv('UPDATE_INTERVAL', 60))
+PROVIDER_TOKEN = os.getenv('PROVIDER_TOKEN')
 
 JOBSTORES = {
-    'default': RedisJobStore(jobs_key='jobs', run_times_key='run_times', host='localhost', port=6380)
+    'default': RedisJobStore(jobs_key='jobs', run_times_key='run_times', host='localhost', port=6379)
 }
 
 scheduler = ContextSchedulerDecorator(AsyncIOScheduler(jobstores=JOBSTORES))
 scheduler.ctx.add_instance(bot, Bot)
 
-
-redis_storage = RedisStorage.from_url('redis://localhost:6380')
+redis_storage = RedisStorage.from_url('redis://localhost:6379')
 dp = Dispatcher(storage=redis_storage)
 
 class States(StatesGroup):
     notes = State()
     chat = State()
     search = State()
+    subscription_choice = State()
+    wait_for_payment = State()
+    wait_for_json = State()
+
+# PRICE_1_MONTH = 640
+# PRICE_3_MONTHS = 575
+# PRICE_6_MONTHS = 545
+# PRICE_12_MONTHS = 480
+
+PRICE_1_MONTH = 100
+PRICE_3_MONTHS = 300
+PRICE_6_MONTHS = 600
+PRICE_12_MONTHS = 480
+
+FREE_USERS = ['ryko_official', 'netnet_dada', 'AristotelPetrov', 'donRumata03', 'Minlos']
+
+async def check_subscription(user: TelegramUser):
+
+    has_active_subscription = await user.has_active_subscription()
+
+    if user.username in FREE_USERS:
+        return True
+
+    return has_active_subscription
+
+def get_subscription_keyboard() -> types.ReplyKeyboardMarkup:
+
+    builder = ReplyKeyboardBuilder()
+
+    keyboard = []
+    keyboard.append(types.KeyboardButton(text=f'1 месяц ({PRICE_1_MONTH} ₽ / мес)'))
+    builder.row(*keyboard)
+
+    keyboard = []
+    keyboard.append(types.KeyboardButton(text=f'3 месяца ({PRICE_3_MONTHS} ₽ / мес) | На 1️⃣0️⃣ % выгоднее'))
+    builder.row(*keyboard)
+
+    keyboard = []
+    keyboard.append(types.KeyboardButton(text=f'🔥 Пол года ({PRICE_6_MONTHS} ₽ / мес) | На 1️⃣5️⃣ % выгоднее'))
+    builder.row(*keyboard)
+
+    keyboard = []
+    keyboard.append(types.KeyboardButton(text=f'🔥🔥🔥 Год ({PRICE_12_MONTHS} ₽ / мес) | На 2️⃣5️⃣ % выгоднее'))
+    builder.row(*keyboard)
+
+    return builder.as_markup(resize_keyboard=True)
+
 
 @dp.message(CommandStart())
 async def command_start_handler(message: types.Message, state: FSMContext):
@@ -70,6 +122,7 @@ async def command_start_handler(message: types.Message, state: FSMContext):
         "Представь себе личного помощника, который запоминает все присланные сообщения, ищет необходимую информацию "
         "и позволяет тебе общаться с твоей собственной базой знаний в любое время.\n\n"
         "📚 <b>Функции:</b>\n"
+        "- Импорт любых чатов и каналов в Telegram\n"
         "- Сохранение заметок\n"
         "- Гибкий поиск\n"
         "- Взаимодействие с базой знаний для получения ответов на любые вопросы\n\n"
@@ -86,6 +139,7 @@ async def cmd_help(message: types.Message):
         "/search 🔎 - Your notes\n"
         "/chat 💬 - With the knowledge base\n"
         "/note ✍️ - Back to notes mode\n"
+        "/import 📥 - Import notes from Telegram\n"
         "/link 🔗 - Invite friends with discount\n"
         "/subscribe ✅ - Your access to the bot\n"
         "/update 🔄 - Update the vector store\n"
@@ -94,8 +148,13 @@ async def cmd_help(message: types.Message):
 
     await message.answer(help_text)
 
-@dp.message(Command('subscribe'))
-async def cmd_subscribe(message: types.Message):
+@dp.message(Command('link'))
+async def cmd_link(message: types.Message):
+    await message.answer('NOT IMPLEMENTED YET')
+
+@dp.message(Command('import'))
+async def cmd_import(message: types.Message, state: FSMContext):
+
     user, _ = await TelegramUser.get_or_create(
         telegram_id=message.from_user.id,
         defaults={
@@ -105,12 +164,40 @@ async def cmd_subscribe(message: types.Message):
         }
     )
 
-    await message.answer('''
-Подписка на бота пока не доступна. Следи за обновлениями 🚀 Описание услуги:
+    has_active_subscription = await check_subscription(user)
+    if not has_active_subscription:
+        await message.answer('Для импорта заметок нужно оформить подписку: /subscribe')
+        return
+    
+    image_path = 'image.png'
+    image_from_pc = types.FSInputFile(image_path)
 
-- Стоимость: 480 рублей в месяц
-- Возможности: неограниченное количество запросов к базе знаний и сохранение заметок
-''')
+    await state.set_state(States.wait_for_json)
+
+    await message.answer_photo(
+        photo=image_from_pc,
+        caption='Отправь мне чат или канал, который хочешь импортировать в формате JSON. Не включай изображения в файл! Вот как это сделать ⬇️',
+        show_caption_above_media=True,
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
+@dp.message(Command('subscribe'))
+async def cmd_subscribe(message: types.Message, state: FSMContext):
+    user, _ = await TelegramUser.get_or_create(
+        telegram_id=message.from_user.id,
+        defaults={
+            'username': message.from_user.username or "there",
+            'first_name': message.from_user.first_name or "",
+            'last_name': message.from_user.last_name or ""
+        }
+    )
+
+    await state.set_state(States.subscription_choice)
+
+    await message.answer(
+        'Выбери срок подписки. Чем дольше, тем дешевле 😉',
+        reply_markup=get_subscription_keyboard()
+    )
 
 @dp.message(Command('note'))
 async def cmd_note_mode(message: types.Message, state: FSMContext):
@@ -119,6 +206,9 @@ async def cmd_note_mode(message: types.Message, state: FSMContext):
 
 @dp.message(Command('chat'))
 async def cmd_chat_mode(message: types.Message, state: FSMContext):
+
+    await state.clear()
+
     await state.set_state(States.chat)
     await message.answer('Чат с базой знаний активирован. Задавай вопросы 💬')
 
@@ -156,9 +246,98 @@ async def cmd_update_pincone(message: types.Message):
         }
     )
 
+    has_active_subscription = await check_subscription(user)
+    if not has_active_subscription:
+        await message.answer('Для обновления базы знаний нужно оформить подписку: /subscribe')
+        return
+
     await upload_notes_to_pinecone(user)
     await message.answer('Обновил базу знаний 🔄')
 
+@dp.message(States.subscription_choice)
+async def process_subscription_choice(message: types.Message, state: FSMContext):
+
+    valid_choices = get_subscription_keyboard().keyboard
+    valid_choices = [button[0].text for button in valid_choices]
+
+    if message.text not in valid_choices:
+        await message.answer('Выбери один из вариантов на клавиатуре ⬇️', reply_markup=get_subscription_keyboard())
+        return
+    
+    user, _ = await TelegramUser.get_or_create(
+        telegram_id=message.from_user.id,
+        defaults={
+            'username': message.from_user.username or "there",
+            'first_name': message.from_user.first_name or "",
+            'last_name': message.from_user.last_name or ""
+        }
+    )
+
+    price = None
+    if message.text == valid_choices[0]:
+        price = PRICE_1_MONTH
+        title = 'Подписка на 1 месяц'
+        months_num = 1
+    elif message.text == valid_choices[1]:
+        price = PRICE_3_MONTHS
+        title = 'Подписка на 3 месяца'
+        months_num = 3
+    elif message.text == valid_choices[2]:
+        price = PRICE_6_MONTHS
+        title = 'Подписка на 6 месяцев'
+        months_num = 6
+    elif message.text == valid_choices[3]:
+        price = PRICE_12_MONTHS
+        title = 'Подписка на 12 месяцев'
+        months_num = 12
+    else:
+        await message.answer('Что-то пошло не так, попробуй еще раз: /subscribe')
+        return
+    
+    await state.set_state(States.wait_for_payment)
+
+    await message.answer_invoice(
+        title=title,
+        description='Доступ к боту Saved AI',
+        payload=f'subscribe_{months_num}',
+        currency='RUB',
+        prices=[types.LabeledPrice(label='Подписка', amount=price*100)],
+        provider_token=PROVIDER_TOKEN
+    )
+
+@dp.pre_checkout_query()
+async def process_precheckout_query(query: types.PreCheckoutQuery):
+    await query.answer(ok=True)
+
+@dp.message(F.successful_payment)
+async def process_successful_payment(message: types.Message):
+
+    goal, months_num = message.successful_payment.invoice_payload.split('_')
+    months_num = int(months_num)
+
+    # get state from storage
+    key = StorageKey(bot.id, message.from_user.id, message.from_user.id)
+    state = FSMContext(dp.storage, key)
+
+    user, _ = await TelegramUser.get_or_create(
+        telegram_id=message.from_user.id,
+        defaults={
+            'username': message.from_user.username or "there",
+            'first_name': message.from_user.first_name or "",
+            'last_name': message.from_user.last_name or ""
+        }
+    )
+
+    if goal == 'subscribe':
+
+        await user.activate_subscription(days=30*months_num)
+        await message.answer(f'Подписка на {months_num} месяцев активирована ✅\nИстекает {user.subscription_end_date.date()}', reply_markup=types.ReplyKeyboardRemove())
+        await state.set_state(States.notes)
+
+        flag = await user.has_active_subscription()
+        if not flag:
+            print('SUBSCRIPTION NOT ACTIVE, SOMETHING WRONG')
+    
 @dp.message(States.chat)
 async def chat_with_kb(message: types.Message, state: FSMContext):
 
@@ -173,6 +352,11 @@ async def chat_with_kb(message: types.Message, state: FSMContext):
             'last_name': message.from_user.last_name or ""
         }
     )
+
+    has_active_subscription = await check_subscription(user)
+    if not has_active_subscription:
+        await message.answer('Для общения с базой знаний нужно оформить подписку: /subscribe')
+        return
 
     if not await user.limmits_not_exceeded:
         await message.answer("You have exceeded the limit of 30 messages per day or 200 vector storage volume.")
@@ -212,7 +396,51 @@ async def chat_with_kb(message: types.Message, state: FSMContext):
 
         await message.answer('Теперь я могу обсудить найденные заметки, но чтобы найти другие, отправь /chat')
 
+@dp.message(States.wait_for_json)
+async def process_json_file(message: types.Message, state: FSMContext):
 
+    user, _ = await TelegramUser.get_or_create(
+        telegram_id=message.from_user.id,
+        defaults={
+            'username': message.from_user.username or "there",
+            'first_name': message.from_user.first_name or "",
+            'last_name': message.from_user.last_name or ""
+        }
+    )
+
+    has_active_subscription = await check_subscription(user)
+    if not has_active_subscription:
+        await message.answer('Для импорта заметок нужно оформить подписку: /subscribe')
+        return
+
+    file_id = message.document.file_id
+    try:
+        file = await bot.get_file(file_id)
+    except aiogram.exceptions.TelegramBadRequest:
+        await message.answer('Кажется, файл больше 20 Мб ☹️. При экспорте установи диапозон дат и попробуй снова')
+
+
+    if not file.file_path.endswith('.json'):
+        await message.answer('Пожалуйста, отправь файл в формате JSON')
+        return
+
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    file_name = os.path.join('exported_chats', f'chat_{file_id}stamp_{timestamp}.json')
+    await bot.download_file(file.file_path, file_name)
+    
+
+    df, chat_name = parse_telegram_chat(file_name)
+    wordcloud_path = generate_wordcloud(df, chat_name)
+    wordcloud_image = types.FSInputFile(wordcloud_path)
+
+    await upload_exported_chat_to_pinecone(user, df, chat_name)
+
+    await message.answer_photo(
+        photo=wordcloud_image,
+        caption=f'Чат "{chat_name}" успешно импортирован. Лови облако ключевых слов из чата ☁️',
+        show_caption_above_media=True,
+        reply_markup=types.ReplyKeyboardRemove()
+    )
 
 @dp.message(States.notes)
 async def add_note(message: types.Message):
@@ -226,6 +454,10 @@ async def add_note(message: types.Message):
         }
     )
 
+    has_active_subscription = await check_subscription(user)
+    if not has_active_subscription:
+        await message.answer('Для добавления заметок нужно оформить подписку: /subscribe')
+        return
     
     # If there are no notes yet (so this one is the first), update the vector store
     FIRST_FLAG = False
@@ -269,8 +501,13 @@ async def process_search_query(message: types.Message, state: FSMContext):
         }
     )
 
+    has_active_subscription = await check_subscription(user)
+    if not has_active_subscription:
+        await message.answer('Для поиска по заметкам нужно оформить подписку: /subscribe')
+        return
+
     if not await user.limmits_not_exceeded:
-        await message.answer("You have exceeded the limit of 30 messages per day or 200 vector storage volume.")
+        await message.answer("You have exceeded the limit of 30 messages per day or 200 Mb vector storage volume.")
         await state.clear()
         return
     

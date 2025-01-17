@@ -21,4 +21,22 @@ dependencies = [
     "redis>=5.2.1",
     "duckduckgo-search>=7.1.1",
     "tavily-python>=0.5.0",
+    "pandas>=2.2.3",
+    "matplotlib>=3.10.0",
+    "seaborn>=0.13.2",
+    "polars>=1.19.0",
+    "orjson>=3.10.12",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "nltk>=3.9.1",
+    "pytest>=8.3.4",
+    "scikit-learn>=1.6.0",
+    "stop-words>=2018.7.23",
+    "torch>=2.5.1",
+    "transformers>=4.47.1",
+    "wat>=0.4.4",
+    "wordcloud>=1.9.4",
 ]
