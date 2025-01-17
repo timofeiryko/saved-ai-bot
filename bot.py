@@ -68,7 +68,7 @@ PRICE_3_MONTHS = 300
 PRICE_6_MONTHS = 600
 PRICE_12_MONTHS = 480
 
-FREE_USERS = ['ryko_official', 'netnet_dada', 'AristotelPetrov', 'donRumata03', 'Minlos']
+FREE_USERS = ['ryko_official', 'netnet_dada', 'AristotelPetrov', 'donRumata03', 'Minlos', 'youryouthhh']
 
 async def check_subscription(user: TelegramUser):
 
@@ -150,7 +150,7 @@ async def cmd_help(message: types.Message):
 
 @dp.message(Command('link'))
 async def cmd_link(message: types.Message):
-    await message.answer('NOT IMPLEMENTED YET')
+    await message.answer('Пока что реферальная система в разработке. Но ты можешь просто отправить знакомым ссылку на бота, и это оччень поможет мне в развитии 🙏\n\nhttps://t.me/saved_ai_notes_bot')
 
 @dp.message(Command('import'))
 async def cmd_import(message: types.Message, state: FSMContext):
