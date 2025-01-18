@@ -409,7 +409,8 @@ async def chat_with_kb(message: types.Message, state: FSMContext):
         results, thread_id, assistant_id = await start_kb_chat(user, message.text)
         await state.update_data(thread_id=thread_id, assistant_id=assistant_id)
 
-        await message.answer(results.get('answer', ''), parse_mode=ParseMode.MARKDOWN)
+        await message.answer(results.get('answer', ''), parse_mode=ParseMode.MARKDOWN, reply_markup=types.ReplyKeyboardRemove())
+        await message.answer('Мой ответ основан на следующих сообщениях:', reply_markup=types.ReplyKeyboardRemove())
 
         sent_messages_ids = set()
         for result in results.get('context', []):
@@ -425,6 +426,19 @@ async def chat_with_kb(message: types.Message, state: FSMContext):
                 from_chat_id=message.chat.id,
                 message_id=message_id
             )
+
+        sent_messages = set()
+        for result in results.get('context', []):
+            try:
+                message_from_imported_chat = result.metadata['text']
+            except KeyError:
+                continue
+            message_from_imported_chat += f'\n\nDate: {result.metadata["date"]}'
+            if message_from_imported_chat in sent_messages:
+                continue
+            sent_messages.add(message_from_imported_chat)
+            await message.answer(message_from_imported_chat)
+
 
         await message.answer('Теперь я могу обсудить найденные заметки, но чтобы найти другие, отправь /chat')
 
@@ -455,6 +469,8 @@ async def process_json_file(message: types.Message, state: FSMContext):
     if not file.file_path.endswith('.json'):
         await message.answer('Пожалуйста, отправь файл в формате JSON')
         return
+
+    await message.reply('💬')
 
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     file_name = os.path.join('exported_chats', f'chat_{file_id}stamp_{timestamp}.json')
