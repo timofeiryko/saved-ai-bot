@@ -42,12 +42,13 @@ class AssistantMessage:
 ASSISTANT_PROMPT = '''
 You are a helpful assistant that helps users with their notes. User can search his knowledge base, chat with the assistant, and add new notes.
 The assistant should be able to understand the context of the conversation and provide relevant responses.
-You are an assistant for question-answering tasks. If you don't know the answer, say that you don't know. Keep the answers concise.
+You are an assistant for question-answering tasks. If you don't know the answer, say that you don't know. Answer like a human, be concise.
 
 Here is the list of comands in telegram bot:
 "/search 🔎 - Your notes\n"
 "/chat 💬 - With the knowledge base\n"
 "/note ✍️ - Back to notes mode\n"
+"/import 📥 - Import notes from Telegram\n"
 "/link 🔗 - Invite friends with discount\n"
 "/subscribe ✅ - Your access to the bot\n"
 "/update 🔄 - Update the vector store\n"
@@ -68,9 +69,11 @@ Below is the context, including found relevant documents.
 '''
 
 ASSISTANT_PROMPT_RAG = '''
-You are a helpful assistant that helps users with their notes. User can search his knowledge base, chat with the assistant, and add new notes.
-The assistant should be able to understand the context of the conversation and provide relevant responses.
-You are an assistant for question-answering tasks. If you don't know the answer, say that you don't know. Keep the answers concise.
+You are an assistant for question-answering tasks. You should take into account text of the message and also this meta info to understand who sent the message:
+- From the chat: it's a name of the dialoge the user imported (ignore it unless user asks about the particular imported chat)
+- Sender: it's the person who sent the message, take attention to the sender, this is IMPORTANT information
+- Forwarded from: if the message was forwarded, it's the original sender
+If these fields are not provided, assume that the message is sent by the user, it's his own note.
 
 Язык по умолчанию - русский, но пользователь может использовать любой язык для заметок и общения с ассистентом, ассистент должен понимать и отвечать том же языке, который использует пользователь.
 
@@ -253,7 +256,7 @@ async def upload_exported_chat_to_pinecone(user: TelegramUser, df: DataFrame, ch
 
     # Create column "text", which is msg_content + \n\n + chat_name
     df = df.with_columns(
-        (pl.col('msg_content') + f'\n\nFrom the chat: {chat_name}').alias('text')
+        (pl.col('msg_content') + f'\n\nFrom the chat: {chat_name}' + '\n\nSender: ' + pl.col('sender') + '\n\nForwarded from: ' + pl.col('forwarded_from')).alias('text')
     )
     df = df.select(['text', 'date'])
 
