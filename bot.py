@@ -63,6 +63,7 @@ PRICE_1_MONTH = 640
 PRICE_3_MONTHS = 580
 PRICE_6_MONTHS = 540
 PRICE_12_MONTHS = 480
+INVITE_DISCOUNT = 0.8
 
 FREE_USERS = ['ryko_official', 'netnet_dada', 'AristotelPetrov', 'donRumata03', 'Minlos', 'youryouthhh']
 
@@ -75,24 +76,24 @@ async def check_subscription(user: TelegramUser):
 
     return has_active_subscription
 
-def get_subscription_keyboard() -> types.ReplyKeyboardMarkup:
+def get_subscription_keyboard(discount: float = 1.0) -> types.ReplyKeyboardMarkup:
 
     builder = ReplyKeyboardBuilder()
 
     keyboard = []
-    keyboard.append(types.KeyboardButton(text=f'1 месяц ({PRICE_1_MONTH} ₽ / мес)'))
+    keyboard.append(types.KeyboardButton(text=f'1 месяц ({PRICE_1_MONTH * discount:.0f} ₽ / мес)'))
     builder.row(*keyboard)
 
     keyboard = []
-    keyboard.append(types.KeyboardButton(text=f'3 месяца ({PRICE_3_MONTHS} ₽ / мес) | На 1️⃣0️⃣ % выгоднее'))
+    keyboard.append(types.KeyboardButton(text=f'3 месяца ({PRICE_3_MONTHS * discount:.0f} ₽ / мес) | На 1️⃣0️⃣ % выгоднее'))
     builder.row(*keyboard)
 
     keyboard = []
-    keyboard.append(types.KeyboardButton(text=f'🔥 Пол года ({PRICE_6_MONTHS} ₽ / мес) | На 1️⃣5️⃣ % выгоднее'))
+    keyboard.append(types.KeyboardButton(text=f'🔥 Пол года ({PRICE_6_MONTHS * discount:.0f} ₽ / мес) | На 1️⃣5️⃣ % выгоднее'))
     builder.row(*keyboard)
 
     keyboard = []
-    keyboard.append(types.KeyboardButton(text=f'🔥🔥🔥 Год ({PRICE_12_MONTHS} ₽ / мес) | На 2️⃣5️⃣ % выгоднее'))
+    keyboard.append(types.KeyboardButton(text=f'🔥🔥🔥 Год ({PRICE_12_MONTHS * discount:.0f} ₽ / мес) | На 2️⃣5️⃣ % выгоднее'))
     builder.row(*keyboard)
 
     return builder.as_markup(resize_keyboard=True)
@@ -127,7 +128,10 @@ async def command_start_handler(message: types.Message, state: FSMContext, comma
             await user.save()
 
         invited_message = f'🎁 Специально для тебя действует скидка 20% на подписку, так как тебя пригласил @{invited_by_user.username}'        
-        price = PRICE_12_MONTHS * 0.8
+        price = PRICE_12_MONTHS * INVITE_DISCOUNT
+
+        # Add flag that there is a discount 
+        await state.update_data(invited_disount=True)
 
     welcome_message = (
         f"👋 Привет, {user.first_name}!\n\n"
@@ -223,9 +227,16 @@ async def cmd_subscribe(message: types.Message, state: FSMContext):
 
     await state.set_state(States.subscription_choice)
 
+    data = await state.get_data()
+    invited_disount = data.get('invited_disount', False)
+    if invited_disount:
+        discount = INVITE_DISCOUNT
+    else:
+        discount = 1.0
+
     await message.answer(
         'Выбери срок подписки. Чем дольше, тем дешевле 😉',
-        reply_markup=get_subscription_keyboard()
+        reply_markup=get_subscription_keyboard(discount=discount)
     )
 
 @dp.message(Command('note'))
@@ -286,11 +297,18 @@ async def cmd_update_pincone(message: types.Message):
 @dp.message(States.subscription_choice)
 async def process_subscription_choice(message: types.Message, state: FSMContext):
 
-    valid_choices = get_subscription_keyboard().keyboard
+    data = await state.get_data()
+    invited_disount = data.get('invited_disount', False)
+    if invited_disount:
+        discount = INVITE_DISCOUNT
+    else:
+        discount = 1.0
+
+    valid_choices = get_subscription_keyboard(discount=discount).keyboard
     valid_choices = [button[0].text for button in valid_choices]
 
     if message.text not in valid_choices:
-        await message.answer('Выбери один из вариантов на клавиатуре ⬇️', reply_markup=get_subscription_keyboard())
+        await message.answer('Выбери один из вариантов на клавиатуре ⬇️', reply_markup=get_subscription_keyboard(discount=discount))
         return
     
     user, _ = await TelegramUser.get_or_create(
@@ -322,8 +340,15 @@ async def process_subscription_choice(message: types.Message, state: FSMContext)
     else:
         await message.answer('Что-то пошло не так, попробуй еще раз: /subscribe')
         return
+
+    # If invited by someone, apply discount
+    data = await state.get_data()
+    invited_disount = data.get('invited_disount', False)
+    if invited_disount:
+        price = price * INVITE_DISCOUNT
     
     await state.set_state(States.wait_for_payment)
+
 
     await message.answer_invoice(
         title=title,
