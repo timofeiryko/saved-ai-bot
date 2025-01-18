@@ -433,7 +433,11 @@ async def chat_with_kb(message: types.Message, state: FSMContext):
                 message_from_imported_chat = result.metadata['text']
             except KeyError:
                 continue
-            message_from_imported_chat += f'\n\nDate: {result.metadata["date"]}'
+            try:
+                date = result.metadata['date']
+            except KeyError:
+                continue
+            message_from_imported_chat += f'\n\nDate: {date}'
             if message_from_imported_chat in sent_messages:
                 continue
             sent_messages.add(message_from_imported_chat)
