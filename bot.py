@@ -413,7 +413,10 @@ async def chat_with_kb(message: types.Message, state: FSMContext):
 
         sent_messages_ids = set()
         for result in results.get('context', []):
-            message_id = result.metadata['source']
+            try:
+                message_id = result.metadata['source']
+            except KeyError:
+                continue
             if message_id in sent_messages_ids:
                 continue
             sent_messages_ids.add(message_id)

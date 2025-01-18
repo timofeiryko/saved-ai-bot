@@ -253,7 +253,7 @@ async def upload_exported_chat_to_pinecone(user: TelegramUser, df: DataFrame, ch
 
     # Create column "text", which is msg_content + \n\n + chat_name
     df = df.with_columns(
-        (pl.col('msg_content') + '\n\n' + chat_name).alias('text')
+        (pl.col('msg_content') + f'\n\nFrom the chat: {chat_name}').alias('text')
     )
     df = df.select(['text', 'date'])
 
