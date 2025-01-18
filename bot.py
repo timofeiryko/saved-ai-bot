@@ -97,6 +97,9 @@ def get_subscription_keyboard() -> types.ReplyKeyboardMarkup:
 
     return builder.as_markup(resize_keyboard=True)
 
+@dp.message(CommandStart(deep_link=False))
+async def command_start_handler_raw(message: types.Message, state: FSMContext, command: CommandObject):
+    await command_start_handler(message, state, command)
 
 @dp.message(CommandStart(deep_link=True))
 async def command_start_handler(message: types.Message, state: FSMContext, command: CommandObject):
