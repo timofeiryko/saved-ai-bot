@@ -3,11 +3,12 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 import aiogram.exceptions
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram import types
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.utils.deep_linking import create_start_link
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
@@ -58,11 +59,6 @@ class States(StatesGroup):
     wait_for_payment = State()
     wait_for_json = State()
 
-# PRICE_1_MONTH = 640
-# PRICE_3_MONTHS = 575
-# PRICE_6_MONTHS = 545
-# PRICE_12_MONTHS = 480
-
 PRICE_1_MONTH = 640
 PRICE_3_MONTHS = 580
 PRICE_6_MONTHS = 540
@@ -102,8 +98,8 @@ def get_subscription_keyboard() -> types.ReplyKeyboardMarkup:
     return builder.as_markup(resize_keyboard=True)
 
 
-@dp.message(CommandStart())
-async def command_start_handler(message: types.Message, state: FSMContext):
+@dp.message(CommandStart(deep_link=True))
+async def command_start_handler(message: types.Message, state: FSMContext, command: CommandObject):
     """
     This handler receives messages with the `/start` command
     """
@@ -116,6 +112,20 @@ async def command_start_handler(message: types.Message, state: FSMContext):
         }
     )
 
+    price = PRICE_12_MONTHS
+    invited_message = None
+
+    invited_by = command.args
+    if invited_by:
+
+        invited_by_user = await TelegramUser.get(telegram_id=invited_by)
+        if invited_by_user:
+            user.invited_by = invited_by_user
+            await user.save()
+
+        invited_message = f'🎁 Специально для тебя действует скидка 20% на подписку, так как тебя пригласил @{invited_by_user.username}'        
+        price = PRICE_12_MONTHS * 0.8
+
     welcome_message = (
         f"👋 Привет, {user.first_name}!\n\n"
         "✨ <b>Добро пожаловать в Saved AI!</b> ✨\n\n"
@@ -126,8 +136,11 @@ async def command_start_handler(message: types.Message, state: FSMContext):
         "- Сохранение заметок\n"
         "- Гибкий поиск\n"
         "- Взаимодействие с базой знаний для получения ответов на любые вопросы\n\n"
-        "🔒 <b>480 р / мес, чтобы получить доступ к боту:\n</b> /subscribe"
+        f"🔒 <b>{price:.0f} р / мес, чтобы получить доступ к боту:\n</b> /subscribe"
     )
+
+    if invited_message:
+        welcome_message += f'\n\n{invited_message}'
 
     await state.set_state(States.notes)
     await message.answer(welcome_message, parse_mode=ParseMode.HTML)
@@ -150,7 +163,20 @@ async def cmd_help(message: types.Message):
 
 @dp.message(Command('link'))
 async def cmd_link(message: types.Message):
-    await message.answer('Пока что реферальная система в разработке. Но ты можешь просто отправить знакомым ссылку на бота, и это оччень поможет мне в развитии 🙏\n\nhttps://t.me/saved_ai_notes_bot')
+
+    user, _ = await TelegramUser.get_or_create(
+        telegram_id=message.from_user.id,
+        defaults={
+            'username': message.from_user.username or "there",
+            'first_name': message.from_user.first_name or "",
+            'last_name': message.from_user.last_name or ""
+        }
+    )
+    invited_count = await user.invited_users_count
+    link = await create_start_link(bot, user.telegram_id)
+    message_text = f'Все, кто зарегистрируются по этой ссылке, получат скидку 20% на бот Saved AI, а ты - 20% на следующую подписку:\n\n{link}\n\nСейчас приглашено: {invited_count} 👤'
+
+    await message.answer(message_text)
 
 @dp.message(Command('import'))
 async def cmd_import(message: types.Message, state: FSMContext):

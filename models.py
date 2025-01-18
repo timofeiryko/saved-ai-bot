@@ -22,6 +22,18 @@ class TelegramUser(BaseModel):
     vector_storage_volume = fields.FloatField(default=0)
     queries_count = fields.IntField(default=0)
 
+    invited_by = fields.ForeignKeyField('models.TelegramUser', related_name='invited_users', null=True)
+
+    # Not needed thanks to from aiogram.utils.deep_linking import create_start_link
+    # @property
+    # async def invite_link(self):
+    #     return f'{TG_BOT_LINK}?start={self.telegram_id}'
+
+    @property
+    async def invited_users_count(self):
+        invited_users = await self.invited_users.filter(subscription_end_date__isnull=False)
+        return len(invited_users)
+
     @property
     def vector_storage_namespace(self):
         return f'user_{self.telegram_id}_notes'
