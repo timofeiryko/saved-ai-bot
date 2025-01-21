@@ -268,6 +268,9 @@ async def upload_exported_chat_to_pinecone(user: TelegramUser, df: DataFrame, ch
         .alias('text')
     ).filter(pl.col('text').is_not_null())
 
+    unique_filename = f"chat_{chat_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+    df.write_csv(unique_filename)
+
 
     loader = PolarsDataFrameLoader(df, page_content_column='text')
     documents = loader.load()
