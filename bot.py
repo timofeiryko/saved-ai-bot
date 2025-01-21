@@ -463,7 +463,13 @@ async def chat_with_kb(message: types.Message, state: FSMContext):
             if message_from_imported_chat in sent_messages:
                 continue
             sent_messages.add(message_from_imported_chat)
-            await message.answer(message_from_imported_chat)
+
+            messages_parts = message_from_imported_chat.split('From the chat: ')
+            part_monospace = f'```\n{messages_parts[0]}```'
+            part_info = f'From the chat: {messages_parts[1]}'
+            message_from_imported_chat = part_monospace + part_info
+
+            await message.answer(message_from_imported_chat, parse_mode=ParseMode.MARKDOWN)
 
 
         await message.answer('Теперь я могу обсудить найденные заметки, но чтобы найти другие, отправь /chat')

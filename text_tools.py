@@ -620,14 +620,14 @@ def clean_text(text, for_rf_idf=False):
     text = text.replace('(File not included. Change data exporting settings to download.)', '')
 
     # Clear characters other than numbers and letters of the alphabet only (english and russian)
-    text = re.sub(r'[^A-Za-zА-Яа-яЁё ]', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'[^A-Za-zА-Яа-яЁё: ]', '', text, flags=re.IGNORECASE)
 
     if for_rf_idf:
         return ' '.join(sorted(text.split()))
     
     return text
 
-def generate_wordcloud(df, chat_name):
+def generate_wordcloud(df: pl.DataFrame, chat_name: str) -> str:
 
     vectorizer = TfidfVectorizer(stop_words=STOPWORDS)
     tfidf_matrix = vectorizer.fit_transform(df['msg_content'].map_elements(clean_text, return_dtype=pl.Object))

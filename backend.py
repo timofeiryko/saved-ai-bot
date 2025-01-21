@@ -30,8 +30,6 @@ from models import TelegramUser
 from generate_schema import init
 from tortoise import Tortoise
 
-from text_tools import clean_text
-
 import dotenv
 import csv
 dotenv.load_dotenv()
@@ -258,13 +256,13 @@ async def upload_exported_chat_to_pinecone(user: TelegramUser, df: DataFrame, ch
 
     # Create column "text", which is msg_content + \n\n + chat_name
     df = df.with_columns(
-        (pl.col('msg_content') + f'\n\nFrom the chat: {chat_name}' + '\n\nSender: ' + pl.col('sender') + '\n\nForwarded from: ' + pl.col('forwarded_from')).alias('text')
+        (pl.col('msg_content') + f'\nFrom the chat: {chat_name}' + '\n\nSender: ' + pl.col('sender') + '\nForwarded from: ' + pl.col('forwarded_from')).alias('text')
     )
     df = df.select(['text', 'date'])
 
     df = df.with_columns(
         pl.col('text')
-        .map_elements(lambda x: clean_text(str(x)) if x is not None else None, return_dtype=pl.Utf8)
+        .map_elements(lambda x: str(x) if x is not None else None, return_dtype=pl.Utf8)
         .alias('text')
     ).filter(pl.col('text').is_not_null())
 
