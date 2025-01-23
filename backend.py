@@ -253,11 +253,10 @@ async def search_notes(user: TelegramUser, query: str):
             seen_sources.add(doc.metadata['source'])
 
         try:
-            try:
-                date = result.metadata['date']
-            except KeyError:
-                continue
-            unique_search_results.append(doc)
+            date = doc.metadata['date']
+        except KeyError:
+            continue
+        unique_search_results.append(doc)
 
     # Update user's queries_count
     user.queries_count += 1
