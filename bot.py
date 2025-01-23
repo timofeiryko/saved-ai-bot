@@ -595,14 +595,38 @@ async def process_search_query(message: types.Message, state: FSMContext):
     
     search_results = await search_notes(user, message.text)
 
+    sent_messages = set()
+
     for result in search_results:
-        message_id = result.metadata['source']
+
+        try:
+            message_id = result.metadata['source']
+        except KeyError:
+            continue
 
         await message.bot.forward_message(
             message.chat.id,
             from_chat_id=message.chat.id,
             message_id=message_id
         )
+
+    for result in search_results.get('context', []):
+        try:
+            date = result.metadata['date']
+        except KeyError:
+            continue
+        message_from_imported_chat = result.page_content
+        message_from_imported_chat += f'\n\nDate: {date.split('T')[0]}'
+        if message_from_imported_chat in sent_messages:
+            continue
+        sent_messages.add(message_from_imported_chat)
+
+        messages_parts = message_from_imported_chat.split('From the chat: ')
+        part_monospace = f'```\n{messages_parts[0]}```'
+        part_info = f'From the chat: {messages_parts[1]}'
+        message_from_imported_chat = part_monospace + part_info
+
+        await message.answer(message_from_imported_chat, parse_mode=ParseMode.MARKDOWN)
 
     if not search_results:
         await message.answer('Ничего не найдено😕 Попробуй другой запрос')
