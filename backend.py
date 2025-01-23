@@ -241,10 +241,23 @@ async def search_notes(user: TelegramUser, query: str):
     # Remove duplicates
     unique_search_results = []
     seen_sources = set()
+
     for doc in search_results:
-        if doc.metadata['source'] not in seen_sources:
+
+        try:
+            source = doc.metadata['source']
+        except KeyError:
+            continue
+        if source not in seen_sources:
             unique_search_results.append(doc)
             seen_sources.add(doc.metadata['source'])
+
+        try:
+            try:
+                date = result.metadata['date']
+            except KeyError:
+                continue
+            unique_search_results.append(doc)
 
     # Update user's queries_count
     user.queries_count += 1
