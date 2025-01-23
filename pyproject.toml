@@ -28,6 +28,7 @@ dependencies = [
     "orjson>=3.10.12",
     "scikit-learn>=1.6.0",
     "wordcloud>=1.9.4",
+    "fastapi-admin>=1.0.4",
 ]
 
 [dependency-groups]
