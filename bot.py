@@ -610,7 +610,7 @@ async def process_search_query(message: types.Message, state: FSMContext):
             message_id=message_id
         )
 
-    for result in search_results.get('context', []):
+    for result in search_results:
         try:
             date = result.metadata['date']
         except KeyError:
