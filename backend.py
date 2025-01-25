@@ -232,11 +232,11 @@ async def search_notes(user: TelegramUser, query: str):
         embedding=EMBEDDINGS
     )
 
-    search_results = await vector_store.asimilarity_search_with_relevance_scores(query=query, k=5)
-    search_results = [(doc, score) for doc, score in search_results if score > 0.6]
+    search_results = await vector_store.asimilarity_search_with_relevance_scores(query=query, k=5, score_threshold=0.6)
     
     # Sort by relevance score, return only docs
     search_results = [doc for doc, score in sorted(search_results, key=lambda x: x[1], reverse=True)]
+    print(search_results)
 
     # Remove duplicates
     unique_search_results = []
