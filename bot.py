@@ -65,7 +65,7 @@ PRICE_6_MONTHS = 540
 PRICE_12_MONTHS = 480
 INVITE_DISCOUNT = 0.8
 
-FREE_USERS = ['ryko_official', 'netnet_dada', 'AristotelPetrov', 'donRumata03', 'Minlos', 'youryouthhh', 'random_chemist_name_7', 'MLfroge']
+FREE_USERS = ['ryko_official', 'netnet_dada', 'AristotelPetrov', 'donRumata03', 'Minlos', 'youryouthhh', 'random_chemist_name_7', 'MLfroge', 'Maxie_fintech']
 
 async def check_subscription(user: TelegramUser):
 
